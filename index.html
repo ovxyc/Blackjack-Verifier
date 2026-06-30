@@ -38,8 +38,9 @@
     <div id="result" class="result-box">
         <h3>Verification Results</h3>
         <p><strong>Generated Pre-game Hash:</strong> <span id="hashResult" style="font-family: monospace; word-break: break-all;"></span></p>
-        <p><strong>Resulting Deck Order (Top 10 Cards Dealt First):</strong></p>
+        <p><strong>Resulting Deck Order (Top 12 Cards Dealt First):</strong></p>
         <div id="deckResult" class="deck-display"></div>
+        <p style="font-size: 13px; color: #888; margin-top: 15px;">*Note: The first 4 cards represent the initial deal (Player Card 1, Player Card 2, Dealer Card 1, Dealer Card 2). Any subsequent cards are hits drawn in order.</p>
     </div>
 
     <script>
@@ -71,7 +72,7 @@
             const serverHash = Array.from(new Uint8Array(serverHashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
             document.getElementById('hashResult').textContent = serverHash;
 
-            // Generate and shuffle the deck matching your Python logic
+            // Generate the canonical starting ordered deck matching your Python logic
             const RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
             const SUITS = ["♠","♥","♦","♣"];
             let deck = [];
@@ -84,7 +85,7 @@
                 let hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
                 let hashArray = new Uint8Array(hashBuffer);
                 
-                // Read first 4 bytes as a Big-Endian Unsigned 32-bit Integer to mimic Python's int.from_bytes
+                // Read first 4 bytes as a Big-Endian Unsigned 32-bit Integer to perfectly mirror Python's int.from_bytes(h, "big")
                 let r = (hashArray[0] << 24) >>> 0;
                 r += (hashArray[1] << 16) >>> 0;
                 r += (hashArray[2] << 8) >>> 0;
@@ -92,7 +93,7 @@
                 
                 let j = r % (i + 1);
                 
-                // Swap
+                // Swap array positions deterministically
                 let temp = deck[i];
                 deck[i] = deck[j];
                 deck[j] = temp;
@@ -100,11 +101,12 @@
                 counter++;
             }
 
-            // Display cards
+            // Display elements
             const deckResultDiv = document.getElementById('deckResult');
             deckResultDiv.innerHTML = '';
             
-            deck.slice(0, 10).forEach(card => {
+            // Slicing top 12 cards covers the starting 4 deal cards + potential hits for auditing
+            deck.slice(0, 12).forEach(card => {
                 const cardEl = document.createElement('div');
                 cardEl.className = 'card';
                 if (card.includes('♥') || card.includes('♦')) {

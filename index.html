@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blackjack Provably Fair Verifier</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1a1a1a; color: #e0e0e0; padding: 20px; max-width: 800px; margin: 0 auto; }
+        h1 { color: #ffffff; border-bottom: 2px solid #333; padding-bottom: 10px; }
+        .input-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; color: #aaa; }
+        input[type="text"] { width: 100%; padding: 10px; background-color: #2b2b2b; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box; }
+        button { background-color: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 16px; width: 100%; }
+        button:hover { background-color: #0056b3; }
+        .result-box { background-color: #222; border: 1px solid #333; padding: 15px; margin-top: 20px; border-radius: 4px; display: none; }
+        .deck-display { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        .card { background: #fff; color: #000; padding: 5px 8px; border-radius: 4px; font-weight: bold; font-size: 14px; min-width: 30px; text-align: center; }
+        .card.red { color: #ff0000; }
+    </style>
+</head>
+<body>
+
+    <h1>🃏 Blackjack Hand Verifier</h1>
+    <p>Input the seeds provided by the bot at the end of your game to reconstruct the exact shuffled deck.</p>
+
+    <div class="input-group">
+        <label for="serverSeed">Revealed Server Seed</label>
+        <input type="text" id="serverSeed" placeholder="e.g., secret_string_123">
+    </div>
+
+    <div class="input-group">
+        <label for="clientSeed">Client Seed</label>
+        <input type="text" id="clientSeed" placeholder="e.g., discord_message_id">
+    </div>
+
+    <button onclick="verifyHand()">Verify Deck</button>
+
+    <div id="result" class="result-box">
+        <h3>Verification Results</h3>
+        <p><strong>Generated Pre-game Hash:</strong> <span id="hashResult" style="font-family: monospace; word-break: break-all;"></span></p>
+        <p><strong>Resulting Deck Order (Top 10 Cards Dealt First):</strong></p>
+        <div id="deckResult" class="deck-display"></div>
+    </div>
+
+    <script>
+        // Automatically check URL parameters on load
+        window.onload = function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const sSeed = urlParams.get('server_seed');
+            const cSeed = urlParams.get('client_seed');
+            
+            if (sSeed && cSeed) {
+                document.getElementById('serverSeed').value = sSeed;
+                document.getElementById('clientSeed').value = cSeed;
+                verifyHand();
+            }
+        };
+
+        async function verifyHand() {
+            const serverSeed = document.getElementById('serverSeed').value.trim();
+            const clientSeed = document.getElementById('clientSeed').value.trim();
+            
+            if (!serverSeed || !clientSeed) {
+                alert("Please fill in both seeds.");
+                return;
+            }
+
+            // Calculate Server Seed Hash
+            const serverSeedBuffer = new TextEncoder().encode(serverSeed);
+            const serverHashBuffer = await crypto.subtle.digest('SHA-256', serverSeedBuffer);
+            const serverHash = Array.from(new Uint8Array(serverHashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+            document.getElementById('hashResult').textContent = serverHash;
+
+            // Generate and shuffle the deck matching your Python logic
+            const RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+            const SUITS = ["♠","♥","♦","♣"];
+            let deck = [];
+            for (let r of RANKS) for (let s of SUITS) deck.push(r + s);
+
+            let counter = 0;
+            for (let i = deck.length - 1; i > 0; i--) {
+                let msg = `${serverSeed}:${clientSeed}:${counter}`;
+                let msgBuffer = new TextEncoder().encode(msg);
+                let hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+                let hashArray = new Uint8Array(hashBuffer);
+                
+                // Read first 4 bytes as a Big-Endian Unsigned 32-bit Integer to mimic Python's int.from_bytes
+                let r = (hashArray[0] << 24) >>> 0;
+                r += (hashArray[1] << 16) >>> 0;
+                r += (hashArray[2] << 8) >>> 0;
+                r += hashArray[3] >>> 0;
+                
+                let j = r % (i + 1);
+                
+                // Swap
+                let temp = deck[i];
+                deck[i] = deck[j];
+                deck[j] = temp;
+                
+                counter++;
+            }
+
+            // Display cards
+            const deckResultDiv = document.getElementById('deckResult');
+            deckResultDiv.innerHTML = '';
+            
+            deck.slice(0, 10).forEach(card => {
+                const cardEl = document.createElement('div');
+                cardEl.className = 'card';
+                if (card.includes('♥') || card.includes('♦')) {
+                    cardEl.className += ' red';
+                }
+                cardEl.textContent = card;
+                deckResultDiv.appendChild(cardEl);
+            });
+
+            document.getElementById('result').style.display = 'block';
+        }
+    </script>
+</body>
+</html>

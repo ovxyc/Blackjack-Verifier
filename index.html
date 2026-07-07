@@ -3,76 +3,140 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Blackjack Provably Fair Verifier</title>
+    <title>Casino Provably Fair Verifier</title>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1a1a1a; color: #e0e0e0; padding: 20px; max-width: 800px; margin: 0 auto; }
-        h1 { color: #ffffff; border-bottom: 2px solid #333; padding-bottom: 10px; }
+        h1 { color: #ffffff; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 5px; }
+        .subtitle { color: #888; margin-bottom: 25px; }
         .input-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: bold; color: #aaa; }
-        input[type="text"] { width: 100%; padding: 10px; background-color: #2b2b2b; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box; }
-        button { background-color: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 16px; width: 100%; }
+        input[type="text"], select { width: 100%; padding: 10px; background-color: #2b2b2b; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box; font-size: 16px; }
+        select { cursor: pointer; }
+        button { background-color: #007bff; color: white; border: none; padding: 12px 20px; border-radius: 4px; cursor: pointer; font-size: 16px; width: 100%; font-weight: bold; margin-top: 10px; }
         button:hover { background-color: #0056b3; }
         .result-box { background-color: #222; border: 1px solid #333; padding: 15px; margin-top: 20px; border-radius: 4px; display: none; }
+        .seed-box { font-family: monospace; word-break: break-all; background: #2b2b2b; padding: 4px 8px; border-radius: 4px; border: 1px solid #444; color: #f1c40f; display: inline-block; }
+        
+        /* Blackjack Specific styles */
         .deck-display { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
         .card { background: #fff; color: #000; padding: 5px 8px; border-radius: 4px; font-weight: bold; font-size: 14px; min-width: 30px; text-align: center; }
         .card.red { color: #ff0000; }
+        
+        /* Dice Specific styles */
+        .roll-highlight { font-size: 24px; font-weight: bold; color: #1abc9c; background-color: #2c3e50; padding: 10px; border-radius: 4px; display: inline-block; margin-top: 5px; font-family: monospace; }
     </style>
 </head>
 <body>
 
-    <h1>🃏 Blackjack Hand Verifier</h1>
-    <p>Input the seeds provided by the bot at the end of your game to reconstruct the exact shuffled deck.</p>
+    <h1>🎮 Casino Provably Fair Verifier</h1>
+    <p class="subtitle">Select your game and input your seeds to reconstruct and verify the outcome.</p>
+
+    <div class="input-group">
+        <label for="gameSelect">Select Game</label>
+        <select id="gameSelect" onchange="toggleGameMode()">
+            <option value="blackjack">🃏 Blackjack</option>
+            <option value="dice">🎲 100-Sided Dice</option>
+        </select>
+    </div>
 
     <div class="input-group">
         <label for="serverSeed">Revealed Server Seed</label>
-        <input type="text" id="serverSeed" placeholder="e.g., secret_string_123">
+        <input type="text" id="serverSeed" placeholder="Enter raw server seed">
     </div>
 
     <div class="input-group">
         <label for="clientSeed">Client Seed</label>
-        <input type="text" id="clientSeed" placeholder="e.g., discord_message_id">
+        <input type="text" id="clientSeed" placeholder="Enter client seed">
     </div>
 
-    <button onclick="verifyHand()">Verify Deck</button>
+    <button id="verifyBtn" onclick="runVerification()">Verify Game Outcome</button>
 
+    <!-- RESULT MAIN CONTAINER -->
     <div id="result" class="result-box">
         <h3>Verification Results</h3>
-        <p><strong>Generated Pre-game Hash:</strong> <span id="hashResult" style="font-family: monospace; word-break: break-all;"></span></p>
-        <p><strong>Resulting Deck Order (Top 12 Cards Dealt First):</strong></p>
-        <div id="deckResult" class="deck-display"></div>
-        <p style="font-size: 13px; color: #888; margin-top: 15px;">*Note: The first 4 cards represent the initial deal (Player Card 1, Player Card 2, Dealer Card 1, Dealer Card 2). Any subsequent cards are hits drawn in order.</p>
+        <p><strong>Pre-game Commit Hash (SHA256 of Server Seed):</strong><br><span id="hashResult" class="seed-box"></span></p>
+        
+        <hr style="border: 0; border-top: 1px solid #333; margin: 20px 0;">
+
+        <!-- BLACKJACK UI SECTION -->
+        <div id="blackjackOutput">
+            <p><strong>Resulting Deck Order (Top 12 Cards Dealt First):</strong></p>
+            <div id="deckResult" class="deck-display"></div>
+            <p style="font-size: 13px; color: #888; margin-top: 15px;">*Note: The first 4 cards represent the initial deal (Player 1, Player 2, Dealer 1, Dealer 2).</p>
+        </div>
+
+        <!-- DICE UI SECTION -->
+        <div id="diceOutput" style="display: none;">
+            <p><strong>Combined Hash Digest:</strong><br><span id="digestResult" class="seed-box"></span></p>
+            <p><strong>Integer Outcome (Under / Over / Pick):</strong><br>
+                <span id="intResult" class="roll-highlight"></span>
+            </p>
+            <p><strong>Floating Outcome (Multiplier Mode):</strong><br>
+                <span id="floatResult" class="roll-highlight"></span>
+            </p>
+        </div>
     </div>
 
     <script>
-        // Automatically check URL parameters on load
         window.onload = function() {
             const urlParams = new URLSearchParams(window.location.search);
+            const game = urlParams.get('game') || 'blackjack';
             const sSeed = urlParams.get('server_seed');
             const cSeed = urlParams.get('client_seed');
+            
+            document.getElementById('gameSelect').value = game;
+            toggleGameMode();
             
             if (sSeed && cSeed) {
                 document.getElementById('serverSeed').value = sSeed;
                 document.getElementById('clientSeed').value = cSeed;
-                verifyHand();
+                runVerification();
             }
         };
 
-        async function verifyHand() {
+        function toggleGameMode() {
+            const game = document.getElementById('gameSelect').value;
+            const btn = document.getElementById('verifyBtn');
+            document.getElementById('result').style.display = 'none';
+            
+            if (game === 'blackjack') {
+                btn.style.backgroundColor = '#007bff';
+                btn.textContent = 'Verify Blackjack Deck';
+            } else {
+                btn.style.backgroundColor = '#e67e22';
+                btn.textContent = 'Verify Dice Roll';
+            }
+        }
+
+        async function runVerification() {
+            const game = document.getElementById('gameSelect').value;
             const serverSeed = document.getElementById('serverSeed').value.trim();
             const clientSeed = document.getElementById('clientSeed').value.trim();
-    
+
             if (!serverSeed || !clientSeed) {
                 alert("Please fill in both seeds.");
                 return;
             }
 
-            // Calculate Server Seed Hash
+            // Common: Generate server seed hash
             const serverSeedBuffer = new TextEncoder().encode(serverSeed);
             const serverHashBuffer = await crypto.subtle.digest('SHA-256', serverSeedBuffer);
             const serverHash = Array.from(new Uint8Array(serverHashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
             document.getElementById('hashResult').textContent = serverHash;
-        
-            // Generate starting ordered deck
+
+            if (game === 'blackjack') {
+                document.getElementById('blackjackOutput').style.display = 'block';
+                document.getElementById('diceOutput').style.display = 'none';
+                await verifyBlackjack(serverSeed, clientSeed);
+            } else {
+                document.getElementById('blackjackOutput').style.display = 'none';
+                document.getElementById('diceOutput').style.display = 'block';
+                await verifyDice(serverSeed, clientSeed);
+            }
+            document.getElementById('result').style.display = 'block';
+        }
+
+        async function verifyBlackjack(serverSeed, clientSeed) {
             const RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
             const SUITS = ["♠","♥","♦","♣"];
             let deck = [];
@@ -84,39 +148,38 @@
                 let msgBuffer = new TextEncoder().encode(msg);
                 let hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
                 let hashArray = new Uint8Array(hashBuffer);
-        
-                // Convert all 32 bytes into a single BigInt to perfectly match Python's int.from_bytes(h, "big")
                 let r = 0n;
-                for (let byte of hashArray) {
-                    r = (r << 8n) + BigInt(byte);
-                }
-        
-                // Perform modulo arithmetic using BigInt
+                for (let byte of hashArray) r = (r << 8n) + BigInt(byte);
                 let j = Number(r % BigInt(i + 1));
-        
-                // Swap
-                let temp = deck[i];
-                deck[i] = deck[j];
-                deck[j] = temp;
-        
+                let temp = deck[i]; deck[i] = deck[j]; deck[j] = temp;
                 counter++;
             }
 
-            // Display cards cleanly
             const deckResultDiv = document.getElementById('deckResult');
             deckResultDiv.innerHTML = '';
-            
             deck.slice(0, 12).forEach(card => {
                 const cardEl = document.createElement('div');
-                cardEl.className = 'card';
-                if (card.includes('♥') || card.includes('♦')) {
-                    cardEl.className += ' red';
-                }
+                cardEl.className = 'card' + ((card.includes('♥') || card.includes('♦')) ? ' red' : '');
                 cardEl.textContent = card;
                 deckResultDiv.appendChild(cardEl);
             });
+        }
 
-            document.getElementById('result').style.display = 'block';
+        async function verifyDice(serverSeed, clientSeed) {
+            const comboBuffer = new TextEncoder().encode(`${serverSeed}:${clientSeed}`);
+            const digestBuffer = await crypto.subtle.digest('SHA-256', comboBuffer);
+            const digestArray = new Uint8Array(digestBuffer);
+            const digestHex = Array.from(digestArray).map(b => b.toString(16).padStart(2, '0')).join('');
+            document.getElementById('digestResult').textContent = digestHex;
+
+            let bigIntVal = 0n;
+            for (let byte of digestArray) bigIntVal = (bigIntVal << 8n) + BigInt(byte);
+
+            document.getElementById('intResult').textContent = (bigIntVal % 100n).toString();
+            
+            const precisionScale = 10000000000000000n;
+            const scaledResult = (bigIntVal * precisionScale) / (2n ** 256n);
+            document.getElementById('floatResult').textContent = (Number(scaledResult) / Number(precisionScale)).toFixed(16);
         }
     </script>
 </body>
